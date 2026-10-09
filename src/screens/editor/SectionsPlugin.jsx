@@ -8,6 +8,16 @@ import { IconSections } from './icons';
 
 const usePuck = createUsePuck();
 
+function SectionThumb({ kind }) {
+  return (
+    <span className="cr-sections-catalog__thumb" data-thumb={kind || 'blank'} aria-hidden="true">
+      <span className="cr-sections-catalog__thumb-bar" />
+      <span className="cr-sections-catalog__thumb-bar cr-sections-catalog__thumb-bar--short" />
+      <span className="cr-sections-catalog__thumb-block" />
+    </span>
+  );
+}
+
 function SectionsPanel() {
   const getPuck = useGetPuck();
   const [query, setQuery] = useState('');
@@ -17,7 +27,10 @@ function SectionsPanel() {
     const q = query.trim().toLowerCase();
     if (!q) return SECTION_TEMPLATE_CATALOG;
     return SECTION_TEMPLATE_CATALOG.filter(
-      (item) => item.label.toLowerCase().includes(q) || item.id.includes(q),
+      (item) =>
+        item.label.toLowerCase().includes(q) ||
+        item.id.includes(q) ||
+        (item.description || '').toLowerCase().includes(q),
     );
   }, [query]);
 
@@ -25,13 +38,9 @@ function SectionsPanel() {
     const api = getPuck();
     const data = api.appState?.data;
     if (!data) return;
-    const content = [...(data.content || [])];
-    const footerIndex = content.findIndex((item) => item?.type === 'Footer');
-    const index = footerIndex >= 0 ? footerIndex : content.length;
     const seed = buildCatalogTemplate(catalogId, {
       name: rootProps?.eventName,
     });
-    content.splice(index, 0, seed);
 
     api.dispatch({
       type: 'setData',
@@ -39,7 +48,6 @@ function SectionsPanel() {
         const prevContent = [...(previous.content || [])];
         const prevFooter = prevContent.findIndex((item) => item?.type === 'Footer');
         const at = prevFooter >= 0 ? prevFooter : prevContent.length;
-        // Avoid double-insert if stale closure already applied
         if (prevContent.some((item) => item?.props?.id === seed.props.id)) {
           return previous;
         }
@@ -64,7 +72,8 @@ function SectionsPanel() {
       <div className="cr-drawer-panel__header">
         <p className="cr-drawer-panel__heading">Sections</p>
         <p className="cr-drawer-panel__lede">
-          Add a full section as an editable canvas. Edit content with Elements inside each section.
+          Add a full section as an editable canvas. Presets use placeholder labels — replace them
+          with your real content.
         </p>
       </div>
 
@@ -86,8 +95,13 @@ function SectionsPanel() {
               className="cr-sections-catalog__item"
               onClick={() => insertTemplate(item.id)}
             >
-              <span className="cr-sections-catalog__label">{item.label}</span>
-              <span className="cr-sections-catalog__hint">Canvas template</span>
+              <SectionThumb kind={item.thumb} />
+              <span className="cr-sections-catalog__copy">
+                <span className="cr-sections-catalog__label">{item.label}</span>
+                <span className="cr-sections-catalog__hint">
+                  {item.description || 'Canvas template'}
+                </span>
+              </span>
             </button>
           </li>
         ))}

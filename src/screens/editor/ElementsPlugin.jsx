@@ -158,7 +158,8 @@ function ElementsPanel() {
       <div className="cr-drawer-panel__header">
         <p className="cr-drawer-panel__heading">Elements</p>
         <p className="cr-drawer-panel__lede">
-          Click or drag onto a Canvas Section. Double-click the section first to edit inside.
+          Elements are added to the selected Canvas Section (or its parent section if an element is
+          selected). Drag-and-drop still works. Containers use flow layout, not free positioning.
         </p>
       </div>
 
@@ -174,21 +175,27 @@ function ElementsPanel() {
 
       {!hasCanvas ? (
         <div className="cr-elements-plugin__banner cr-elements-plugin__banner--warn" role="status">
-          <p>No Canvas Section on this page yet.</p>
+          <p>Choose a section to add elements.</p>
           <button type="button" className="cr-btn cr-btn--brand cr-btn--small" onClick={insertCanvasSection}>
-            Add Canvas Section
+            Add a blank section
           </button>
         </div>
       ) : !canInsert ? (
         <div className="cr-elements-plugin__banner cr-elements-plugin__banner--warn" role="status">
-          <p>Select a Canvas Section (or an element inside one) to choose where to add.</p>
+          <p>Choose a section to add elements.</p>
+          <button type="button" className="cr-btn cr-btn--brand cr-btn--small" onClick={insertCanvasSection}>
+            Add a blank section
+          </button>
         </div>
       ) : (
         <div className="cr-elements-plugin__banner cr-elements-plugin__banner--ok" role="status">
           <p>
-            Adding to: <strong>{targetLabel(target)}</strong>
+            Destination: <strong>{targetLabel(target)}</strong>
+            {target?.type === 'ElementContainer' ? (
+              <span className="cr-field-hint"> (flow layout)</span>
+            ) : null}
           </p>
-          <button type="button" className="cr-btn cr-btn--ghost cr-btn--small" onClick={focusTargetInLayers}>
+          <button type="button" className="cr-btn cr-btn--secondary cr-btn--small" onClick={focusTargetInLayers}>
             Change
           </button>
         </div>

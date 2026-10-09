@@ -1,5 +1,28 @@
-import { needsLocation, SECTION_GUIDANCE } from '../constants';
+import { EVENT_TYPES, needsLocation, SECTION_GUIDANCE } from '../constants';
 import { AVAILABILITY_SECTIONS, EVENT_PROFILES } from './eventProfiles';
+
+function eventTypeLabel(eventType) {
+  return EVENT_TYPES.find((item) => item.value === eventType)?.label?.toLowerCase() || 'event';
+}
+
+function joinList(items) {
+  if (!items.length) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+/** Short “why these sections” line from the active profile rules. */
+export function explainRecommendation(eventType, sections = []) {
+  const typeLabel = eventTypeLabel(eventType);
+  const titles = sections
+    .filter((section) => section.kind === 'core' || section.kind === 'content')
+    .map((section) => section.title.toLowerCase());
+  if (!titles.length) {
+    return `Suggested for your ${typeLabel}: a minimal header, hero and call to action so you can start editing quickly.`;
+  }
+  return `Suggested for your ${typeLabel}: ${joinList(titles)}.`;
+}
 
 function cloneSection(section) {
   return {
@@ -167,6 +190,11 @@ export function recommendHomepage({
   const optionalExtras =
     mode === 'suggest_placeholders' || mode === 'missing_areas' ? extras : [];
 
+  const essentialSections = sections.filter(
+    (section) => section.kind === 'core' || section.kind === 'content',
+  );
+  const optionalSections = sections.filter((section) => section.kind === 'optional');
+
   return {
     mode,
     sections,
@@ -176,6 +204,9 @@ export function recommendHomepage({
     missingEssentials: missingEssentialsFor(event),
     eventType,
     reviewSummary,
+    whyRecommended: explainRecommendation(eventType, sections),
+    essentialSections,
+    optionalIncluded: optionalSections,
     isMinimal: sections.length === 0,
   };
 }

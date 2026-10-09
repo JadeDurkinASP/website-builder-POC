@@ -1,9 +1,16 @@
 import {
+  collectAssetIdsFromProject,
+  remapAssetIdsInProject,
+} from '../assets/assetRefs';
+import {
   DEFAULT_BRANDING,
   DEFAULT_CONTENT_AVAILABILITY,
   DEFAULT_CONTENT_SETUP,
   DEFAULT_OPTIONAL_SECTIONS,
   EMPTY_EVENT,
+  MAX_DOCUMENT_BYTES,
+  MAX_IMAGE_BYTES,
+  MAX_PROJECT_BYTES,
   PROJECT_VERSION,
   STORAGE_KEY,
 } from '../constants';
@@ -16,11 +23,16 @@ import {
   base64ToBlob,
   blobToBase64,
   clearAllAssets,
+  createAssetId,
   deleteAsset,
   getAsset,
   getAssetsByIds,
   putAsset,
 } from './assetStore';
+import {
+  isValidPuckDataShape,
+  validateProjectForImport,
+} from './projectValidation';
 
 export function createEmptyContentSetup() {
   return {
@@ -47,11 +59,7 @@ export function createEmptyProject() {
 }
 
 function isValidPuckData(value) {
-  if (value == null) return true;
-  if (typeof value !== 'object') return false;
-  if (!Array.isArray(value.content)) return false;
-  if (!value.root || typeof value.root !== 'object') return false;
-  return true;
+  return isValidPuckDataShape(value);
 }
 
 function mapOptionalSectionsToOverrides(optionalSections = {}) {
@@ -175,6 +183,7 @@ export function migrateProject(raw) {
   return project;
 }
 
+/** Loose structural check for localStorage load. Import uses validateProjectForImport. */
 export function isValidProjectShape(value) {
   if (!value || typeof value !== 'object') return false;
   const version = Number(value.version);
@@ -236,12 +245,20 @@ export function saveProject(project) {
 }
 
 export async function clearProject() {
+  // Clear attachments first so a failed cleanup does not leave a half-reset project.
+  await clearAllAssets();
   localStorage.removeItem(STORAGE_KEY);
-  try {
-    await clearAllAssets();
-  } catch {
-    // Keep localStorage clear even if IndexedDB cleanup fails.
-  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export function exportProjectAsJson(project) {
@@ -249,30 +266,33 @@ export function exportProjectAsJson(project) {
   const blob = new Blob([JSON.stringify(migrated, null, 2)], {
     type: 'application/json',
   });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
   const stamp = new Date().toISOString().slice(0, 10);
-  anchor.href = url;
-  anchor.download = `composer-rapid-project-${stamp}.json`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `composer-rapid-project-${stamp}.json`);
+  return {
+    ok: true,
+    warning:
+      'JSON only does not include uploaded files stored in this browser. Use Export project with attachments to transfer them.',
+  };
 }
 
+/**
+ * Export project + attachment binaries. Reports missing IndexedDB files.
+ */
 export async function exportProjectBundle(project) {
   const migrated = migrateProject(project) || project;
-  const assetIds = (migrated.contentSetup?.assets || []).map((asset) => asset.id);
-  const stored = await getAssetsByIds(assetIds);
-  const assets = [];
+  const expectedIds = [...collectAssetIdsFromProject(migrated)];
+  const stored = await getAssetsByIds(expectedIds);
+  const foundIds = new Set(stored.map((item) => item.id));
+  const missingIds = expectedIds.filter((id) => !foundIds.has(id));
 
+  const assets = [];
   for (const item of stored) {
     const dataBase64 = await blobToBase64(item.blob);
     assets.push({
       id: item.id,
       name: item.name,
       mimeType: item.mimeType,
-      size: item.size,
+      size: item.blob?.size ?? item.size,
       kind: item.kind,
       createdAt: item.createdAt,
       dataBase64,
@@ -284,21 +304,90 @@ export async function exportProjectBundle(project) {
     version: PROJECT_VERSION,
     project: migrated,
     assets,
+    missingAssetIds: missingIds,
   };
 
   const blob = new Blob([JSON.stringify(bundle)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
   const stamp = new Date().toISOString().slice(0, 10);
-  anchor.href = url;
-  anchor.download = `project-${stamp}.composer-rapid-bundle.json`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `project-${stamp}.composer-rapid-bundle.json`);
+
+  if (missingIds.length > 0) {
+    return {
+      ok: true,
+      warning: `${missingIds.length} attachment(s) are referenced but missing from this browser and were not included in the bundle.`,
+      missingAssetIds: missingIds,
+    };
+  }
+
+  return { ok: true, assetCount: assets.length };
 }
 
-export async function importProjectFromFile(file) {
+function validateBundleAssetPayload(asset, runningTotal) {
+  if (!asset || typeof asset !== 'object') {
+    return { ok: false, error: 'Bundle contains an invalid attachment entry.' };
+  }
+  if (typeof asset.id !== 'string' || !asset.id.trim()) {
+    return { ok: false, error: 'An attachment is missing an id.' };
+  }
+  if (typeof asset.dataBase64 !== 'string' || !asset.dataBase64) {
+    return { ok: false, error: `Attachment “${asset.name || asset.id}” has no file data.` };
+  }
+
+  let blob;
+  try {
+    blob = base64ToBlob(asset.dataBase64, asset.mimeType);
+  } catch {
+    return { ok: false, error: `Could not decode attachment “${asset.name || asset.id}”.` };
+  }
+
+  const actualSize = blob.size;
+  const kind =
+    asset.kind === 'image' || asset.kind === 'document'
+      ? asset.kind
+      : (asset.mimeType || '').startsWith('image/')
+        ? 'image'
+        : 'document';
+
+  if (kind === 'image' && actualSize > MAX_IMAGE_BYTES) {
+    return {
+      ok: false,
+      error: `Attachment “${asset.name || asset.id}” exceeds the image size limit.`,
+    };
+  }
+  if (kind === 'document' && actualSize > MAX_DOCUMENT_BYTES) {
+    return {
+      ok: false,
+      error: `Attachment “${asset.name || asset.id}” exceeds the document size limit.`,
+    };
+  }
+  if (runningTotal + actualSize > MAX_PROJECT_BYTES) {
+    return {
+      ok: false,
+      error: 'Bundle attachments exceed the total project storage limit.',
+    };
+  }
+
+  return {
+    ok: true,
+    blob,
+    meta: {
+      id: asset.id,
+      name: asset.name || 'attachment',
+      mimeType: asset.mimeType || blob.type || 'application/octet-stream',
+      size: actualSize,
+      kind,
+      status: 'attached',
+      createdAt: asset.createdAt || new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Import JSON project or Composer Rapid bundle.
+ * Options: { allowJsonWithoutAttachments: true } for plain JSON after user confirmation.
+ * Never mutates the current project on failure (caller keeps existing state).
+ */
+export async function importProjectFromFile(file, options = {}) {
   const text = await file.text();
   let parsed;
   try {
@@ -307,47 +396,133 @@ export async function importProjectFromFile(file) {
     throw new Error('That file is not valid JSON.');
   }
 
-  // Bundle import
   if (parsed?.format === 'composer-rapid-bundle') {
-    if (!isValidProjectShape(parsed.project)) {
-      throw new Error('That bundle does not contain a valid Composer Rapid project.');
+    const validation = validateProjectForImport(parsed.project);
+    if (!validation.ok) {
+      throw new Error(validation.errors[0] || 'That bundle does not contain a valid project.');
     }
+
     const migrated = migrateProject(parsed.project);
-    for (const asset of parsed.assets || []) {
-      const blob = base64ToBlob(asset.dataBase64, asset.mimeType);
-      const result = await putAsset({
-        id: asset.id,
-        blob,
-        meta: {
-          name: asset.name,
-          mimeType: asset.mimeType,
-          size: asset.size,
-          kind: asset.kind,
-          createdAt: asset.createdAt,
-        },
-      });
-      if (!result.ok) {
-        throw new Error(result.error || 'Could not restore an attached file from the bundle.');
-      }
+    if (!migrated) {
+      throw new Error('Could not migrate the bundled project.');
     }
-    return {
-      ...migrated,
-      version: PROJECT_VERSION,
-      updatedAt: new Date().toISOString(),
-    };
+
+    const listedAssets = Array.isArray(parsed.assets) ? parsed.assets : [];
+    const prepared = [];
+    let total = 0;
+    for (const asset of listedAssets) {
+      const check = validateBundleAssetPayload(asset, total);
+      if (!check.ok) throw new Error(check.error);
+      total += check.meta.size;
+      prepared.push(check);
+    }
+
+    const referenced = collectAssetIdsFromProject(migrated);
+    const providedIds = new Set(prepared.map((item) => item.meta.id));
+    const missingInBundle = [...referenced].filter((id) => !providedIds.has(id));
+    if (missingInBundle.length > 0 && !options.allowMissingBundleAssets) {
+      throw new Error(
+        `This bundle is missing ${missingInBundle.length} referenced attachment(s). Export again from a browser that still has those files, or use a complete bundle.`,
+      );
+    }
+
+    // Stage under new ids so a failed write never overwrites existing assets.
+    const idMap = {};
+    const stagedIds = [];
+    try {
+      for (const item of prepared) {
+        const newId = createAssetId();
+        idMap[item.meta.id] = newId;
+        const result = await putAsset({
+          id: newId,
+          blob: item.blob,
+          meta: { ...item.meta, id: newId },
+        });
+        if (!result.ok) {
+          throw new Error(result.error || 'Could not store an attached file from the bundle.');
+        }
+        stagedIds.push(newId);
+      }
+
+      let next = remapAssetIdsInProject(migrated, idMap);
+      next = {
+        ...next,
+        version: PROJECT_VERSION,
+        updatedAt: new Date().toISOString(),
+        contentSetup: {
+          ...next.contentSetup,
+          assets: prepared.map((item) => ({
+            ...item.meta,
+            id: idMap[item.meta.id],
+          })),
+        },
+      };
+
+      // Drop previous browser assets that are no longer referenced.
+      const keep = new Set(stagedIds);
+      const previous = await getAssetsByIds([
+        ...collectAssetIdsFromProject(loadProject() || {}),
+      ]);
+      await Promise.all(
+        previous
+          .filter((asset) => !keep.has(asset.id))
+          .map((asset) => deleteAsset(asset.id)),
+      );
+
+      return {
+        project: next,
+        kind: 'bundle',
+        warning:
+          missingInBundle.length > 0
+            ? `${missingInBundle.length} referenced attachment(s) were absent from the bundle.`
+            : '',
+      };
+    } catch (error) {
+      await Promise.all(stagedIds.map((id) => deleteAsset(id).catch(() => {})));
+      throw error;
+    }
   }
 
-  if (!isValidProjectShape(parsed)) {
+  const validation = validateProjectForImport(parsed);
+  if (!validation.ok) {
     throw new Error(
-      'That file does not look like a Composer Rapid project. Check the version and required fields.',
+      validation.errors[0] ||
+        'That file does not look like a Composer Rapid project. Check the version and required fields.',
     );
   }
 
   const migrated = migrateProject(parsed);
+  if (!migrated) {
+    throw new Error('Could not migrate that project file.');
+  }
+
+  const assetMetas = migrated.contentSetup?.assets || [];
+  const needsAttachmentWarning =
+    assetMetas.length > 0 || collectAssetIdsFromProject(migrated).size > 0;
+
+  if (needsAttachmentWarning && !options.allowJsonWithoutAttachments) {
+    const error = new Error(
+      'This JSON file lists attachments, but uploaded files live in browser storage and are not included. Importing will keep the page layout without those files unless you use a project bundle.',
+    );
+    error.code = 'JSON_WITHOUT_ATTACHMENTS';
+    error.project = {
+      ...migrated,
+      version: PROJECT_VERSION,
+      updatedAt: new Date().toISOString(),
+    };
+    throw error;
+  }
+
   return {
-    ...migrated,
-    version: PROJECT_VERSION,
-    updatedAt: new Date().toISOString(),
+    project: {
+      ...migrated,
+      version: PROJECT_VERSION,
+      updatedAt: new Date().toISOString(),
+    },
+    kind: 'json',
+    warning: needsAttachmentWarning
+      ? 'Imported layout only. Uploaded files from the original browser were not included in this JSON file.'
+      : '',
   };
 }
 

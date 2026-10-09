@@ -164,17 +164,104 @@ function resolvePrimaryCtaLabel(event) {
 
 /** Catalog entries for the Sections drawer (same builders as generation). */
 export const SECTION_TEMPLATE_CATALOG = [
-  { id: 'hero', label: 'Hero', component: 'Hero' },
-  { id: 'introduction', label: 'Introduction', component: 'Introduction' },
-  { id: 'highlights', label: 'Highlights', component: 'Highlights' },
-  { id: 'information', label: 'Information', component: 'Information' },
-  { id: 'speakers', label: 'Speakers', component: 'Speakers' },
-  { id: 'sponsors', label: 'Sponsors', component: 'Sponsors' },
-  { id: 'testimonials', label: 'Testimonials', component: 'Testimonials' },
-  { id: 'stats', label: 'Stats', component: 'Stats' },
-  { id: 'faqs', label: 'FAQs', component: 'Faqs' },
-  { id: 'cta', label: 'Call to action', component: 'CallToAction' },
-  { id: 'blank', label: 'Blank canvas', component: 'Blank' },
+  {
+    id: 'hero',
+    label: 'Hero',
+    component: 'Hero',
+    description: 'Headline, supporting line, actions and image placeholder.',
+    thumb: 'hero',
+  },
+  {
+    id: 'introduction',
+    label: 'Introduction',
+    component: 'Introduction',
+    description: 'Simple heading and body for context.',
+    thumb: 'intro',
+  },
+  {
+    id: 'two-column-intro',
+    label: 'Two-column introduction',
+    component: 'TwoColumnIntro',
+    description: 'Text beside an image placeholder; stacks on mobile.',
+    thumb: 'two-col',
+  },
+  {
+    id: 'highlights',
+    label: 'Highlights',
+    component: 'Highlights',
+    description: 'Three short benefit cards in a row.',
+    thumb: 'grid',
+  },
+  {
+    id: 'information',
+    label: 'Information',
+    component: 'Information',
+    description: 'Practical details visitors need.',
+    thumb: 'info',
+  },
+  {
+    id: 'speakers',
+    label: 'Speakers',
+    component: 'Speakers',
+    description: 'Two speaker placeholders with photo and bio.',
+    thumb: 'speakers',
+  },
+  {
+    id: 'speaker-grid',
+    label: 'Speaker grid',
+    component: 'SpeakerGrid',
+    description: 'Four speaker cards in a simple grid.',
+    thumb: 'speaker-grid',
+  },
+  {
+    id: 'image-caption',
+    label: 'Image with caption',
+    component: 'ImageCaption',
+    description: 'Wide image placeholder with a caption underneath.',
+    thumb: 'caption',
+  },
+  {
+    id: 'sponsors',
+    label: 'Sponsors',
+    component: 'Sponsors',
+    description: 'Logo placeholders for partners.',
+    thumb: 'logos',
+  },
+  {
+    id: 'testimonials',
+    label: 'Testimonials',
+    component: 'Testimonials',
+    description: 'Quote and attribution placeholders.',
+    thumb: 'quote',
+  },
+  {
+    id: 'stats',
+    label: 'Stats',
+    component: 'Stats',
+    description: 'Three figure placeholders on a dark band.',
+    thumb: 'stats',
+  },
+  {
+    id: 'faqs',
+    label: 'FAQs',
+    component: 'Faqs',
+    description: 'Question and answer placeholders.',
+    thumb: 'faqs',
+  },
+  {
+    id: 'cta',
+    label: 'Call to action',
+    component: 'CallToAction',
+    description: 'Headline, supporting line and primary button.',
+    thumb: 'cta',
+  },
+  {
+    id: 'blank',
+    label: 'Blank canvas',
+    component: 'Blank',
+    description: 'Empty section to build freely.',
+    thumb: 'blank',
+  },
 ];
 
 export function buildHeroTemplate(event = {}, { suffix = 'hero' } = {}) {
@@ -640,6 +727,122 @@ export function buildBlankCanvasTemplate({ suffix = 'blank', title = 'Canvas Sec
   });
 }
 
+/** Preset: text column + image, with mobile stacking. */
+export function buildTwoColumnIntroTemplate({ suffix = 'two-col' } = {}) {
+  const s = suffix;
+  return canvasSection({
+    suffix: s,
+    displayName: 'Two-column introduction',
+    backgroundColour: '#ffffff',
+    minHeight: 380,
+    layoutMode: 'free',
+    elements: [
+      headingEl({
+        id: uid('ElementHeading', s),
+        text: 'Section heading',
+        x: 32,
+        y: 40,
+        width: 360,
+      }),
+      textEl({
+        id: uid('ElementRichText', s),
+        text: 'Replace this placeholder copy with your own introduction. Keep claims factual.',
+        x: 32,
+        y: 110,
+        width: 360,
+      }),
+      imageEl({
+        id: uid('ElementImage', s),
+        x: 440,
+        y: 40,
+        width: 300,
+        height: 240,
+      }),
+    ],
+  });
+}
+
+/** Preset: four speaker placeholders in a grid. */
+export function buildSpeakerGridTemplate({ suffix = 'speaker-grid' } = {}) {
+  const s = suffix;
+  const cards = [0, 1, 2, 3].map((index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const x = 32 + col * 360;
+    const y = 100 + row * 200;
+    return [
+      imageEl({
+        id: uid('ElementImage', `${s}-${index}`),
+        x,
+        y,
+        width: 120,
+        height: 120,
+      }),
+      headingEl({
+        id: uid('ElementHeading', `${s}-${index}`),
+        text: 'Speaker name',
+        x: x + 140,
+        y,
+        fontSize: 18,
+        width: 180,
+        level: 'h3',
+      }),
+      textEl({
+        id: uid('ElementRichText', `${s}-${index}`),
+        text: 'Role or organisation\n\nShort biography placeholder.',
+        x: x + 140,
+        y: y + 40,
+        width: 180,
+        fontSize: 14,
+      }),
+    ];
+  });
+
+  return canvasSection({
+    suffix: s,
+    displayName: 'Speaker grid',
+    backgroundColour: '#f4f7f9',
+    minHeight: 520,
+    elements: [
+      headingEl({
+        id: uid('ElementHeading', s),
+        text: 'Speakers',
+        x: 32,
+        y: 28,
+      }),
+      ...cards.flat(),
+    ],
+  });
+}
+
+/** Preset: image with caption underneath. */
+export function buildImageCaptionTemplate({ suffix = 'image-caption' } = {}) {
+  const s = suffix;
+  return canvasSection({
+    suffix: s,
+    displayName: 'Image with caption',
+    backgroundColour: '#ffffff',
+    minHeight: 420,
+    elements: [
+      imageEl({
+        id: uid('ElementImage', s),
+        x: 32,
+        y: 32,
+        width: 700,
+        height: 280,
+      }),
+      textEl({
+        id: uid('ElementRichText', s),
+        text: 'Caption: describe the image or credit the source.',
+        x: 32,
+        y: 330,
+        width: 700,
+        fontSize: 14,
+      }),
+    ],
+  });
+}
+
 /**
  * Build a Canvas Section template from a recommendation section or catalog entry.
  */
@@ -668,6 +871,12 @@ export function buildSectionTemplate(section, event = {}, options = {}) {
       return buildFaqsTemplate(section, { suffix });
     case 'CallToAction':
       return buildCallToActionTemplate(section, event, { suffix });
+    case 'TwoColumnIntro':
+      return buildTwoColumnIntroTemplate({ suffix });
+    case 'SpeakerGrid':
+      return buildSpeakerGridTemplate({ suffix });
+    case 'ImageCaption':
+      return buildImageCaptionTemplate({ suffix });
     case 'Blank':
     case 'CanvasSection':
       return buildBlankCanvasTemplate({

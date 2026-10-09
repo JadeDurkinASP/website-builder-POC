@@ -1,9 +1,6 @@
-import { useGetPuck, createUsePuck } from '@puckeditor/core';
 import { FONT_OPTIONS } from '../../constants';
 import { DesignDirectionCards } from '../setup/DesignDirectionCards';
 import { IconBrand } from './icons';
-
-const usePuck = createUsePuck();
 
 function normalizeHex(value, fallback = '#000000') {
   if (typeof value !== 'string') return fallback;
@@ -15,13 +12,14 @@ function normalizeHex(value, fallback = '#000000') {
   return fallback;
 }
 
-function BrandColourRow({ id, label, value, onChange }) {
+function BrandColourRow({ id, label, hint, value, onChange }) {
   const hex = normalizeHex(value, '#2a3c4c');
   return (
     <div className="cr-brand-colour">
       <label className="cr-brand-colour__label" htmlFor={id}>
         {label}
       </label>
+      {hint ? <p className="cr-field-hint">{hint}</p> : null}
       <div className="cr-brand-colour__row">
         <input
           id={id}
@@ -43,33 +41,23 @@ function BrandColourRow({ id, label, value, onChange }) {
   );
 }
 
-function BrandPanel() {
-  const getPuck = useGetPuck();
-  const rootProps = usePuck((s) => s.appState?.data?.root?.props) || {};
-
-  function patchRoot(patch) {
-    const api = getPuck();
-    const data = api.appState?.data;
-    if (!data?.root) return;
-    api.dispatch({
-      type: 'replaceRoot',
-      root: {
-        ...data.root,
-        props: {
-          ...data.root.props,
-          ...patch,
-        },
-      },
-      recordHistory: true,
-    });
-  }
+function BrandPanel({ branding = {}, onBrandingChange }) {
+  const primary = branding.primaryColour || '#2a3c4c';
+  const accent = branding.secondaryColour || '#00a986';
+  const background = branding.backgroundColour || '#ffffff';
+  const font = branding.font || 'DM Sans';
+  const designDirection = branding.designDirection || 'bold';
 
   return (
-    <div className="cr-drawer-panel cr-brand-plugin" aria-label="Brand">
+    <div className="cr-drawer-panel cr-brand-plugin" aria-label="Website branding">
       <div className="cr-drawer-panel__header">
-        <p className="cr-drawer-panel__heading">Brand</p>
+        <p className="cr-drawer-panel__heading">Website branding</p>
         <p className="cr-drawer-panel__lede">
-          Global page colours, font and design style. Explicit colours on individual blocks are kept.
+          Applies across all pages. Individual element overrides are preserved.
+        </p>
+        <p className="cr-field-hint">
+          Branding updates every page immediately and is not undone by the canvas Undo control
+          (which only reverts content edits on the active page). Save to keep branding changes.
         </p>
       </div>
 
@@ -78,20 +66,23 @@ function BrandPanel() {
         <BrandColourRow
           id="brand-primary"
           label="Primary"
-          value={rootProps.primaryColour}
-          onChange={(primaryColour) => patchRoot({ primaryColour })}
+          hint="Main brand colour."
+          value={primary}
+          onChange={(primaryColour) => onBrandingChange?.({ primaryColour })}
         />
         <BrandColourRow
           id="brand-accent"
           label="Accent"
-          value={rootProps.secondaryColour}
-          onChange={(secondaryColour) => patchRoot({ secondaryColour })}
+          hint="Emphasis and highlights."
+          value={accent}
+          onChange={(secondaryColour) => onBrandingChange?.({ secondaryColour })}
         />
         <BrandColourRow
           id="brand-bg"
-          label="Page background"
-          value={rootProps.backgroundColour}
-          onChange={(backgroundColour) => patchRoot({ backgroundColour })}
+          label="Background"
+          hint="Default page background."
+          value={background}
+          onChange={(backgroundColour) => onBrandingChange?.({ backgroundColour })}
         />
       </div>
 
@@ -101,12 +92,12 @@ function BrandPanel() {
           <span>Font</span>
           <select
             id="brand-font"
-            value={rootProps.font || 'DM Sans'}
-            onChange={(e) => patchRoot({ font: e.target.value })}
+            value={font}
+            onChange={(e) => onBrandingChange?.({ font: e.target.value })}
           >
-            {FONT_OPTIONS.map((font) => (
-              <option key={font.value} value={font.value}>
-                {font.label}
+            {FONT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -116,22 +107,24 @@ function BrandPanel() {
       <div className="cr-brand-plugin__section">
         <h3 className="cr-brand-plugin__title">Design style</h3>
         <p className="cr-field-hint">
-          Updates page styling only — it does not rebuild or replace your edited sections.
+          Updates website styling only — it does not rebuild or replace your edited sections.
         </p>
         <DesignDirectionCards
-          value={rootProps.designDirection || 'bold'}
-          onChange={(designDirection) => patchRoot({ designDirection })}
+          value={designDirection}
+          onChange={(next) => onBrandingChange?.({ designDirection: next })}
         />
       </div>
     </div>
   );
 }
 
-export function createBrandPlugin() {
+export function createBrandPlugin({ branding, onBrandingChange } = {}) {
   return {
     name: 'brand',
     label: 'Brand',
     icon: <IconBrand />,
-    render: () => <BrandPanel />,
+    render: () => (
+      <BrandPanel branding={branding} onBrandingChange={onBrandingChange} />
+    ),
   };
 }

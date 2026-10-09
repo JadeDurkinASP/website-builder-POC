@@ -72,9 +72,8 @@ export function ContentSetupPanel({
       {contentSetup.hasExistingContent === 'yes' ? (
         <div className="cr-content-yes">
           <p className="cr-field-hint">
-            Upload event briefs, speaker information, programme details, testimonials, logos and
-            photographs. Files are attached for you to use in the editor — this demo does not
-            automatically read, understand or place document content into sections.
+            These files are available for reference while editing. This demo does not read them
+            automatically, and uploading a document does not populate sections for you.
           </p>
 
           <div className="cr-field cr-field--full">

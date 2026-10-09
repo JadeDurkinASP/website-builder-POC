@@ -30,6 +30,7 @@ import {
   projectHasPages,
   withSetupDraft,
 } from '../../pages/pageModel';
+import { ConfirmDialog } from '../../ui/AppDialog';
 import { ContentSetupPanel } from './ContentSetupPanel';
 import { DesignDirectionCards } from './DesignDirectionCards';
 import { EventTypeCards } from './EventTypeCards';
@@ -79,6 +80,7 @@ export function SetupModal({
   const [brandOptionsOpen, setBrandOptionsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [homepageOpen, setHomepageOpen] = useState(true);
+  const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false);
   const previousEventType = useRef(draft.event.eventType);
 
   const { event, branding, contentSetup, contentAvailability, sectionOverrides } = draft;
@@ -128,7 +130,11 @@ export function SetupModal({
   }, [event.eventType]);
 
   function persistDraft(nextDraft = draft) {
-    onCommitProject(withSetupDraft(project, nextDraft), { remount: false, closeSetup: false });
+    onCommitProject(withSetupDraft(project, nextDraft), {
+      remount: false,
+      closeSetup: false,
+      persistDraft: true,
+    });
   }
 
   function updateEvent(field, value) {
@@ -261,14 +267,7 @@ export function SetupModal({
     window.requestAnimationFrame(() => triggerRef?.current?.focus?.());
   }
 
-  function handleCreate() {
-    if (hasExistingSite) {
-      const confirmed = window.confirm(
-        'Rebuild the demo homepage from this setup? Other pages you added will be removed, and manual home-page edits will be replaced. Cancel to keep your current site.',
-      );
-      if (!confirmed) return;
-    }
-
+  function createDemoHomepage() {
     const setup = {
       event,
       branding,
@@ -282,12 +281,24 @@ export function SetupModal({
       {
         ...withSetupDraft(project, draft),
         optionalSections: syncOptionalSectionsFromResolved(recommendation.sections),
+        editorHints: {
+          ...(project.editorHints || {}),
+          gettingStartedDismissed: false,
+        },
         updatedAt: new Date().toISOString(),
       },
       puckData,
     );
     onCommitProject(next, { remount: true, closeSetup: true, save: true });
     onReadyMessage?.('Your starting page is ready. Select anything to edit it.');
+  }
+
+  function handleCreate() {
+    if (hasExistingSite) {
+      setRebuildConfirmOpen(true);
+      return;
+    }
+    createDemoHomepage();
   }
 
   const showLocation = needsLocation(event.format);
@@ -301,6 +312,7 @@ export function SetupModal({
   const stepMeta = STEPS[step - 1];
 
   return (
+    <>
     <dialog
       ref={dialogRef}
       className="cr-setup-dialog"
@@ -660,7 +672,12 @@ export function SetupModal({
                   >
                     <summary>Your suggested homepage</summary>
                     <div className="cr-setup-dialog__homepage-body">
+                      <p className="cr-setup-dialog__why">{recommendation.whyRecommended}</p>
                       <p className="cr-field-hint">{recommendation.reviewSummary}</p>
+                      <p className="cr-field-hint">
+                        The live preview shows this outline only — nothing is committed until you
+                        create or rebuild the homepage.
+                      </p>
 
                       {recommendation.isMinimal ? (
                         <p>
@@ -668,14 +685,39 @@ export function SetupModal({
                           <strong>Call to action</strong> and <strong>Footer</strong>.
                         </p>
                       ) : (
-                        <ol className="cr-review-list">
-                          {recommendation.sections.map((section) => (
-                            <li key={section.id}>
-                              <strong>{section.title}</strong>
-                              <p>{section.explanation}</p>
-                            </li>
-                          ))}
-                        </ol>
+                        <>
+                          <h3 className="cr-setup-dialog__list-heading">Essential sections</h3>
+                          <ol className="cr-review-list">
+                            {(recommendation.essentialSections?.length
+                              ? recommendation.essentialSections
+                              : recommendation.sections
+                            ).map((section) => (
+                              <li key={section.id}>
+                                <strong>{section.title}</strong>
+                                <span className="cr-review-list__badge">Essential</span>
+                                <p>{section.explanation || section.guidance}</p>
+                              </li>
+                            ))}
+                          </ol>
+                          {recommendation.optionalIncluded?.length > 0 ? (
+                            <>
+                              <h3 className="cr-setup-dialog__list-heading">
+                                Optional in this outline
+                              </h3>
+                              <ol className="cr-review-list">
+                                {recommendation.optionalIncluded.map((section) => (
+                                  <li key={section.id}>
+                                    <strong>{section.title}</strong>
+                                    <span className="cr-review-list__badge cr-review-list__badge--optional">
+                                      Optional
+                                    </span>
+                                    <p>{section.explanation || section.guidance}</p>
+                                  </li>
+                                ))}
+                              </ol>
+                            </>
+                          ) : null}
+                        </>
                       )}
 
                       {recommendation.mode === 'missing_areas' ? (
@@ -714,13 +756,16 @@ export function SetupModal({
 
                       {recommendation.optionalExtras?.length > 0 ? (
                         <div className="cr-setup-dialog__subpanel">
-                          <h3>Optional extras</h3>
+                          <h3>Optional recommendations</h3>
+                          <p className="cr-field-hint">
+                            Not essential for your event type — add only if useful.
+                          </p>
                           <ul className="cr-suggested-missing">
                             {recommendation.optionalExtras.map((section) => (
                               <li key={section.id}>
                                 <div>
                                   <strong>{section.title}</strong>
-                                  <p>{section.explanation}</p>
+                                  <p>{section.explanation || section.guidance}</p>
                                 </div>
                                 <button
                                   type="button"
@@ -827,5 +872,18 @@ export function SetupModal({
         </div>
       </AssetProvider>
     </dialog>
+    <ConfirmDialog
+      open={rebuildConfirmOpen}
+      title="Rebuild demo homepage?"
+      message="Rebuild the demo homepage from this setup? Other pages you added will be removed, and manual home-page edits will be replaced. Cancel to keep your current site."
+      confirmLabel="Rebuild homepage"
+      danger
+      onCancel={() => setRebuildConfirmOpen(false)}
+      onConfirm={() => {
+        setRebuildConfirmOpen(false);
+        createDemoHomepage();
+      }}
+    />
+    </>
   );
 }

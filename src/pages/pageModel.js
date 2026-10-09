@@ -6,6 +6,7 @@ import {
   buildBlankCanvasTemplate,
   buildHeroTemplate,
 } from '../generation/sectionTemplates';
+import { countPageLinkReferences, scrubDeletedPageLinks, updateNavLabelsForPage } from './pageLinks';
 
 function randomId(prefix) {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -328,25 +329,30 @@ export function addPageToProject(project, { title } = {}) {
   };
 }
 
+/**
+ * Rename a page’s display title. Slug stays stable so existing page:slug
+ * links keep working. Nav labels that point at this page are updated.
+ */
 export function renamePageInProject(project, pageId, title) {
   const safeTitle = (title || '').trim();
   if (!safeTitle) return project;
 
+  const target = getPageById(project, pageId);
+  if (!target) return project;
+
   const pages = getPages(project).map((page) => {
     if (page.id !== pageId) return page;
-    if (page.role === 'home') {
-      return { ...page, title: safeTitle };
-    }
-    const slug = uniqueSlug(safeTitle, getPages(project), pageId);
-    return { ...page, title: safeTitle, slug };
+    return { ...page, title: safeTitle };
   });
 
   const home = pages.find((page) => page.role === 'home') || pages[0];
-  return {
+  const next = {
     ...project,
     pages,
     puckData: home?.puckData || project.puckData,
   };
+
+  return updateNavLabelsForPage(next, target.slug, safeTitle);
 }
 
 export function removePageFromProject(project, pageId) {
@@ -355,18 +361,27 @@ export function removePageFromProject(project, pageId) {
     return { ok: false, error: 'The home page cannot be deleted.', project };
   }
 
+  const linkCount = countPageLinkReferences(project, target.slug);
+
   const pages = getPages(project).filter((page) => page.id !== pageId);
   const home = pages.find((page) => page.role === 'home') || pages[0];
   const activeStillExists = pages.some((page) => page.id === project.activePageId);
 
+  let next = {
+    ...project,
+    pages,
+    activePageId: activeStillExists ? project.activePageId : home?.id || null,
+    puckData: home?.puckData || null,
+  };
+
+  next = scrubDeletedPageLinks(next, target.slug);
+
   return {
     ok: true,
-    project: {
-      ...project,
-      pages,
-      activePageId: activeStillExists ? project.activePageId : home?.id || null,
-      puckData: home?.puckData || null,
-    },
+    project: next,
+    deletedTitle: target.title,
+    deletedSlug: target.slug,
+    clearedLinkCount: linkCount,
   };
 }
 

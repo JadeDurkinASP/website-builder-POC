@@ -75,6 +75,10 @@ export function EditorTopBar() {
         <span className="cr-editor-topbar__ready" role="status">
           {chrome.readyMessage}
         </span>
+      ) : chrome.statusMessage ? (
+        <span className="cr-editor-topbar__ready" role="status">
+          {chrome.statusMessage}
+        </span>
       ) : null}
 
       <div className="cr-editor-topbar__history">
@@ -150,41 +154,37 @@ export function EditorTopBar() {
                 role="menuitem"
                 onClick={() => {
                   setMoreOpen(false);
-                  chrome.onExportJson();
-                }}
-              >
-                Export JSON
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMoreOpen(false);
                   chrome.onExportBundle();
                 }}
               >
-                Export bundle
+                Export project with attachments
               </button>
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   setMoreOpen(false);
-                  chrome.onImportJson();
+                  chrome.onImportProject();
                 }}
               >
-                Import JSON
+                Import project
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMoreOpen(false);
-                  chrome.onImportBundle();
-                }}
-              >
-                Import bundle
-              </button>
+              <details className="cr-editor-topbar__advanced">
+                <summary>Advanced export</summary>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    chrome.onExportJson();
+                  }}
+                >
+                  Export JSON only
+                </button>
+                <p className="cr-editor-topbar__menu-hint">
+                  JSON alone does not transfer uploaded files. Prefer a project bundle.
+                </p>
+              </details>
               <button
                 type="button"
                 role="menuitem"

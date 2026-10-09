@@ -3,6 +3,7 @@ import { Puck } from '@puckeditor/core';
 import '@puckeditor/core/puck.css';
 import { AssetProvider } from '../assets/AssetResolver';
 import { buildSampleProject } from '../data/sampleEvent';
+import { countPageLinkReferences } from '../pages/pageLinks';
 import {
   addPageToProject,
   getActivePage,
@@ -14,17 +15,19 @@ import {
 } from '../pages/pageModel';
 import { PageLinkProvider } from '../pages/PageLinkContext';
 import { puckConfig } from '../puck/config';
+import { applyWebsiteBrandingToProject } from '../state/projectSnapshot';
 import {
-  clearProject,
   exportProjectAsJson,
   exportProjectBundle,
   importProjectFromFile,
   saveProject,
 } from '../storage/projectStorage';
+import { ConfirmDialog, PromptDialog } from '../ui/AppDialog';
 import { createBrandPlugin } from './editor/BrandPlugin';
 import { EditorChromeProvider } from './editor/EditorChromeContext';
 import { editorHeaderOverride } from './editor/EditorTopBar';
 import { createElementsPlugin } from './editor/ElementsPlugin';
+import { GettingStartedPanel } from './editor/GettingStartedPanel';
 import { InspectorFields } from './editor/InspectorFields';
 import { createLayersPlugin } from './editor/LayersPlugin';
 import { createPagesPlugin } from './editor/PageStrip';
@@ -40,19 +43,14 @@ function persistActiveData(project, data) {
   return withUpdatedActivePage(project, data);
 }
 
-function snapshotKey(project) {
-  try {
-    return JSON.stringify(project);
-  } catch {
-    return '';
-  }
-}
-
 export function EditorScreen({
   project,
+  dirty,
+  saveError: saveErrorFromApp = '',
   onProjectChange,
+  onSaveProject,
   onPreview,
-  onResetToSetup,
+  onRequestReset,
   onEditSetup,
   onImported,
   setupTriggerRef,
@@ -60,16 +58,25 @@ export function EditorScreen({
   onClearReadyMessage,
   setupOpen = false,
 }) {
-  const [saveError, setSaveError] = useState('');
-  const [savedSnapshot, setSavedSnapshot] = useState(() => snapshotKey(project));
+  const [localError, setLocalError] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
   const [sourceOpen, setSourceOpen] = useState(false);
   const [puckKey, setPuckKey] = useState(0);
+  const [guideStatus, setGuideStatus] = useState('');
   const importInputRef = useRef(null);
-  const bundleInputRef = useRef(null);
   const localSetupTriggerRef = useRef(null);
   const setupButtonRef = setupTriggerRef || localSetupTriggerRef;
   const activePage = getActivePage(project);
   const latestDataRef = useRef(activePage?.puckData || project.puckData);
+
+  const [pagePrompt, setPagePrompt] = useState(null);
+  const [pageConfirm, setPageConfirm] = useState(null);
+  const [replaceConfirm, setReplaceConfirm] = useState(null);
+  const [jsonImportConfirm, setJsonImportConfirm] = useState(null);
+
+  const saveError = saveErrorFromApp || localError;
+  const showGettingStarted =
+    Boolean(readyMessage) && !project.editorHints?.gettingStartedDismissed;
 
   useEffect(() => {
     if (!readyMessage) return undefined;
@@ -101,41 +108,28 @@ export function EditorScreen({
     return () => window.removeEventListener('composer-rapid:asset-added', onAssetAdded);
   }, [onProjectChange]);
 
-  function commitData(data, baseProject = project) {
-    const next = persistActiveData(baseProject, data);
-    const rootProps = data?.root?.props || {};
-    return {
-      ...next,
-      branding: {
-        ...next.branding,
-        primaryColour: rootProps.primaryColour ?? next.branding.primaryColour,
-        secondaryColour: rootProps.secondaryColour ?? next.branding.secondaryColour,
-        backgroundColour: rootProps.backgroundColour ?? next.branding.backgroundColour,
-        font: rootProps.font ?? next.branding.font,
-        designDirection: rootProps.designDirection ?? next.branding.designDirection,
-      },
-    };
+  function commitData(baseProject, data) {
+    return persistActiveData(baseProject, data);
   }
 
   function handleChange(data) {
     latestDataRef.current = data;
-    onProjectChange(commitData(data));
+    onProjectChange(commitData(project, data));
   }
 
   function handleSave(data) {
-    const next = commitData(data || latestDataRef.current);
-    const result = saveProject(next);
-    if (result.ok) {
-      onProjectChange(result.project);
-      setSavedSnapshot(snapshotKey(result.project));
-      setSaveError('');
+    const next = commitData(project, data || latestDataRef.current);
+    const result = onSaveProject(next);
+    if (!result?.ok) {
+      setLocalError(result?.error || 'Could not save.');
     } else {
-      setSaveError(result.error || 'Could not save.');
+      setLocalError('');
+      setStatusMessage('Saved locally.');
     }
   }
 
   function flushThen(mutator) {
-    const flushed = commitData(latestDataRef.current);
+    const flushed = commitData(project, latestDataRef.current);
     const next = mutator(flushed);
     onProjectChange(next);
     setPuckKey((value) => value + 1);
@@ -148,106 +142,181 @@ export function EditorScreen({
   }
 
   function handleAddPage() {
-    const title = window.prompt('Page title', 'New page');
-    if (title == null) return;
-    const trimmed = title.trim();
-    if (!trimmed) {
-      setSaveError('Enter a page title.');
-      return;
-    }
-    flushThen((current) => addPageToProject(current, { title: trimmed }));
-    setSaveError('');
+    setPagePrompt({
+      mode: 'add',
+      title: 'Add page',
+      label: 'Page title',
+      defaultValue: 'New page',
+      confirmLabel: 'Add page',
+    });
   }
 
   function handleRenamePage(pageId) {
     const page = getPages(project).find((item) => item.id === pageId);
     if (!page) return;
-    const title = window.prompt('Rename page', page.title);
-    if (title == null) return;
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    flushThen((current) => renamePageInProject(current, pageId, trimmed));
+    setPagePrompt({
+      mode: 'rename',
+      pageId,
+      title: 'Rename page',
+      label: 'Page title',
+      defaultValue: page.title,
+      confirmLabel: 'Rename',
+    });
   }
 
   function handleDeletePage(pageId) {
     const page = getPages(project).find((item) => item.id === pageId);
-    if (!page || page.role === 'home') return;
-    const confirmed = window.confirm(`Delete page “${page.title}”? This cannot be undone.`);
-    if (!confirmed) return;
+    if (!page || page.role === 'home' || page.slug === 'home') {
+      setLocalError('The home page cannot be deleted.');
+      return;
+    }
+    const flushed = commitData(project, latestDataRef.current);
+    const linkCount = countPageLinkReferences(flushed, page.slug);
+
+    const message =
+      linkCount > 0
+        ? `Delete page “${page.title}”? ${linkCount} internal link(s) to this page will be removed from navigation and cleared on buttons/text links. Page content elsewhere is kept. This cannot be undone.`
+        : `Delete page “${page.title}”? This cannot be undone.`;
+
+    setPageConfirm({
+      pageId,
+      title: 'Delete page',
+      message,
+      confirmLabel: 'Delete page',
+    });
+  }
+
+  function confirmPagePrompt(title) {
+    const prompt = pagePrompt;
+    setPagePrompt(null);
+    if (!prompt) return;
+    if (prompt.mode === 'add') {
+      flushThen((current) => addPageToProject(current, { title }));
+      setLocalError('');
+      setStatusMessage(`Page “${title}” added.`);
+      return;
+    }
+    if (prompt.mode === 'rename') {
+      flushThen((current) => renamePageInProject(current, prompt.pageId, title));
+      setStatusMessage('Page renamed. Internal links keep working (slug unchanged).');
+    }
+  }
+
+  function confirmPageDelete() {
+    const pending = pageConfirm;
+    setPageConfirm(null);
+    if (!pending) return;
     flushThen((current) => {
-      const result = removePageFromProject(current, pageId);
+      const result = removePageFromProject(current, pending.pageId);
       if (!result.ok) {
-        setSaveError(result.error);
+        setLocalError(result.error);
         return current;
       }
-      setSaveError('');
+      setLocalError('');
+      const linkNote =
+        result.clearedLinkCount > 0
+          ? ` Cleared ${result.clearedLinkCount} internal link(s).`
+          : '';
+      setStatusMessage(`Deleted “${result.deletedTitle}”.${linkNote}`);
       return result.project;
     });
   }
 
+  function handleWebsiteBranding(patch) {
+    const flushed = commitData(project, latestDataRef.current);
+    const next = applyWebsiteBrandingToProject(flushed, patch);
+    onProjectChange(next);
+    setPuckKey((value) => value + 1);
+  }
+
   function handleExportJson() {
-    exportProjectAsJson(commitData(latestDataRef.current));
+    const result = exportProjectAsJson(commitData(project, latestDataRef.current));
+    setStatusMessage(result.warning || 'Exported JSON (without attachments).');
   }
 
   async function handleExportBundle() {
     try {
-      await exportProjectBundle(commitData(latestDataRef.current));
-      setSaveError('');
+      const result = await exportProjectBundle(commitData(project, latestDataRef.current));
+      setLocalError('');
+      if (result.warning) {
+        setStatusMessage(result.warning);
+      } else {
+        setStatusMessage(
+          `Exported project with ${result.assetCount ?? 0} attachment(s).`,
+        );
+      }
     } catch (error) {
-      setSaveError(error.message || 'Bundle export failed.');
+      setLocalError(error.message || 'Bundle export failed.');
     }
   }
 
-  async function handleImport(file) {
+  async function runImport(file, options = {}) {
     if (!file) return;
     try {
-      const imported = await importProjectFromFile(file);
-      const result = saveProject(imported);
+      const imported = await importProjectFromFile(file, options);
+      const nextProject = imported.project || imported;
+      const result = saveProject(nextProject);
       if (!result.ok) {
-        setSaveError(result.error);
+        setLocalError(result.error);
         return;
       }
       onImported(result.project);
-      setSavedSnapshot(snapshotKey(result.project));
-      setSaveError('');
+      setLocalError('');
+      setStatusMessage(
+        imported.warning ||
+          (imported.kind === 'bundle'
+            ? 'Imported project with attachments.'
+            : 'Imported project.'),
+      );
     } catch (error) {
-      setSaveError(error.message || 'Import failed.');
+      if (error.code === 'JSON_WITHOUT_ATTACHMENTS' && error.project) {
+        setJsonImportConfirm({ file, project: error.project, message: error.message });
+        return;
+      }
+      setLocalError(error.message || 'Import failed.');
     }
   }
 
-  async function handleReset() {
-    const confirmed = window.confirm(
-      'Reset this project? Your saved Composer Rapid data and attachments in this browser will be cleared.',
-    );
-    if (!confirmed) return;
-    await clearProject();
-    onResetToSetup();
+  function requestReplaceAction(action) {
+    if (!dirty) {
+      action();
+      return;
+    }
+    setReplaceConfirm({ action });
   }
 
   function handleLoadSample() {
-    const confirmed = window.confirm(
-      'Load the sample event and rebuild the demo homepage? Your current page edits will be replaced.',
-    );
-    if (!confirmed) return;
-    const sample = buildSampleProject({ withHomepage: true });
-    const result = saveProject(sample);
-    if (!result.ok) {
-      setSaveError(result.error);
-      return;
-    }
-    onImported(result.project);
-    setSavedSnapshot(snapshotKey(result.project));
-    setSaveError('');
+    requestReplaceAction(() => {
+      const sample = buildSampleProject({ withHomepage: true });
+      const result = saveProject(sample);
+      if (!result.ok) {
+        setLocalError(result.error);
+        return;
+      }
+      onImported(result.project);
+      setLocalError('');
+      setStatusMessage('Sample event loaded.');
+    });
   }
 
   function goPreview() {
-    onProjectChange(commitData(latestDataRef.current));
+    onProjectChange(commitData(project, latestDataRef.current));
     onPreview();
+  }
+
+  function dismissGettingStarted() {
+    onProjectChange({
+      ...commitData(project, latestDataRef.current),
+      editorHints: {
+        ...(project.editorHints || {}),
+        gettingStartedDismissed: true,
+      },
+    });
+    onClearReadyMessage?.();
   }
 
   const pages = getPages(project);
   const puckData = activePage?.puckData || project.puckData;
-  const dirty = snapshotKey(project) !== savedSnapshot;
 
   const puckPlugins = useMemo(() => {
     const pagesPlugin = createPagesPlugin({
@@ -258,16 +327,18 @@ export function EditorScreen({
       onRename: handleRenamePage,
       onDelete: handleDeletePage,
     });
-    // Pages → Elements → Sections (blocks) → Layers (outline) → Brand
     return [
       pagesPlugin,
       createElementsPlugin(),
       createSectionsPlugin(),
       createLayersPlugin(),
-      createBrandPlugin(),
+      createBrandPlugin({
+        branding: project.branding,
+        onBrandingChange: handleWebsiteBranding,
+      }),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pages, activePage?.id, project]);
+  }, [pages, activePage?.id, project.branding, project]);
 
   const chromeValue = useMemo(
     () => ({
@@ -276,6 +347,7 @@ export function EditorScreen({
       activePageId: activePage?.id,
       dirty,
       saveError,
+      statusMessage,
       readyMessage,
       setupButtonRef,
       onSelectPage: handleSelectPage,
@@ -285,10 +357,9 @@ export function EditorScreen({
       onOpenSource: () => setSourceOpen(true),
       onExportJson: handleExportJson,
       onExportBundle: handleExportBundle,
-      onImportJson: () => importInputRef.current?.click(),
-      onImportBundle: () => bundleInputRef.current?.click(),
+      onImportProject: () => importInputRef.current?.click(),
       onLoadSample: handleLoadSample,
-      onReset: handleReset,
+      onReset: onRequestReset,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -297,6 +368,7 @@ export function EditorScreen({
       activePage?.id,
       dirty,
       saveError,
+      statusMessage,
       readyMessage,
       setupButtonRef,
     ],
@@ -332,17 +404,8 @@ export function EditorScreen({
               accept="application/json,.json"
               hidden
               onChange={(e) => {
-                handleImport(e.target.files?.[0]);
-                e.target.value = '';
-              }}
-            />
-            <input
-              ref={bundleInputRef}
-              type="file"
-              accept="application/json,.json"
-              hidden
-              onChange={(e) => {
-                handleImport(e.target.files?.[0]);
+                const file = e.target.files?.[0];
+                requestReplaceAction(() => runImport(file));
                 e.target.value = '';
               }}
             />
@@ -369,6 +432,17 @@ export function EditorScreen({
                     syncHostStyles: true,
                   }}
                 />
+                {showGettingStarted ? (
+                  <GettingStartedPanel
+                    onDismiss={dismissGettingStarted}
+                    onStatus={setGuideStatus}
+                  />
+                ) : null}
+                {guideStatus ? (
+                  <p className="cr-getting-started__status" role="status">
+                    {guideStatus}
+                  </p>
+                ) : null}
               </div>
               <SourceContentPanel
                 contentSetup={project.contentSetup}
@@ -377,6 +451,58 @@ export function EditorScreen({
               />
             </div>
           </div>
+
+          <PromptDialog
+            open={Boolean(pagePrompt)}
+            title={pagePrompt?.title || ''}
+            label={pagePrompt?.label || 'Title'}
+            defaultValue={pagePrompt?.defaultValue || ''}
+            confirmLabel={pagePrompt?.confirmLabel || 'Save'}
+            validate={(value) => (!value ? 'Enter a page title.' : '')}
+            onCancel={() => setPagePrompt(null)}
+            onConfirm={confirmPagePrompt}
+          />
+
+          <ConfirmDialog
+            open={Boolean(pageConfirm)}
+            title={pageConfirm?.title || 'Confirm'}
+            message={pageConfirm?.message || ''}
+            confirmLabel={pageConfirm?.confirmLabel || 'Confirm'}
+            danger
+            onCancel={() => setPageConfirm(null)}
+            onConfirm={confirmPageDelete}
+          />
+
+          <ConfirmDialog
+            open={Boolean(replaceConfirm)}
+            title="Replace unsaved work?"
+            message="You have unsaved changes. Continuing will replace the current project. Cancel to keep editing."
+            confirmLabel="Continue"
+            danger
+            onCancel={() => setReplaceConfirm(null)}
+            onConfirm={() => {
+              const action = replaceConfirm?.action;
+              setReplaceConfirm(null);
+              action?.();
+            }}
+          />
+
+          <ConfirmDialog
+            open={Boolean(jsonImportConfirm)}
+            title="Import JSON without attachments?"
+            message={
+              jsonImportConfirm?.message ||
+              'This JSON file does not include uploaded files. Import the layout only?'
+            }
+            confirmLabel="Import layout only"
+            onCancel={() => setJsonImportConfirm(null)}
+            onConfirm={() => {
+              const pending = jsonImportConfirm;
+              setJsonImportConfirm(null);
+              if (!pending?.file) return;
+              runImport(pending.file, { allowJsonWithoutAttachments: true });
+            }}
+          />
         </EditorChromeProvider>
       </PageLinkProvider>
     </AssetProvider>

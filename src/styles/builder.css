@@ -434,6 +434,7 @@ a {
 }
 
 .cr-editor-frame {
+  position: relative;
   flex: 1;
   min-height: 0;
 }
@@ -1588,10 +1589,10 @@ a {
 .cr-sections-catalog__item {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
-  padding: 0.65rem 0.75rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
   border: 1px solid rgba(42, 60, 76, 0.12);
   border-radius: 8px;
   background: #fff;
@@ -1607,6 +1608,13 @@ a {
   outline: none;
 }
 
+.cr-sections-catalog__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
 .cr-sections-catalog__label {
   font-size: 0.9rem;
   font-weight: 700;
@@ -1615,6 +1623,38 @@ a {
 .cr-sections-catalog__hint {
   font-size: 0.72rem;
   color: var(--cr-muted);
+  line-height: 1.35;
+}
+
+.cr-sections-catalog__thumb {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 36px;
+  border-radius: 6px;
+  border: 1px solid rgba(42, 60, 76, 0.12);
+  background: linear-gradient(160deg, #eef2f5, #f7fafb);
+  display: grid;
+  grid-template-rows: 6px 4px 1fr;
+  gap: 3px;
+  padding: 5px;
+}
+
+.cr-sections-catalog__thumb-bar {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(42, 60, 76, 0.35);
+}
+
+.cr-sections-catalog__thumb-bar--short {
+  width: 60%;
+  background: rgba(0, 169, 134, 0.55);
+}
+
+.cr-sections-catalog__thumb-block {
+  display: block;
+  border-radius: 3px;
+  background: rgba(42, 60, 76, 0.12);
 }
 
 /* Elements plugin — two-column tile grid */
@@ -2966,4 +3006,199 @@ a {
   font-size: 0.65rem;
   padding: 0.2rem 0.4rem;
   border-radius: 6px;
+}
+
+/* Application dialogs */
+.cr-app-dialog {
+  border: none;
+  padding: 0;
+  max-width: min(28rem, calc(100vw - 2rem));
+  background: transparent;
+  color: var(--cr-navy);
+}
+
+.cr-app-dialog::backdrop {
+  background: rgba(42, 60, 76, 0.45);
+}
+
+.cr-app-dialog__panel {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(42, 60, 76, 0.12);
+  box-shadow: 0 16px 40px rgba(42, 60, 76, 0.18);
+  overflow: hidden;
+}
+
+.cr-app-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem 0.35rem;
+}
+
+.cr-app-dialog__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.cr-app-dialog__close {
+  border: none;
+  background: transparent;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--cr-muted);
+}
+
+.cr-app-dialog__body {
+  padding: 0.35rem 1rem 1rem;
+}
+
+.cr-app-dialog__message {
+  margin: 0 0 1rem;
+  line-height: 1.45;
+}
+
+.cr-app-dialog__error {
+  margin: 0 0 0.75rem;
+  color: var(--cr-danger);
+  font-size: 0.88rem;
+}
+
+.cr-app-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cr-app-dialog__form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Getting started coach marks */
+.cr-getting-started {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 20;
+  width: min(17.5rem, calc(100% - 1.5rem));
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(42, 60, 76, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(42, 60, 76, 0.12);
+}
+
+.cr-getting-started__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cr-getting-started__title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.cr-getting-started__dismiss {
+  border: none;
+  background: transparent;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--cr-muted);
+}
+
+.cr-getting-started__lede {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.78rem;
+  color: var(--cr-muted);
+  line-height: 1.4;
+}
+
+.cr-getting-started__actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cr-getting-started__actions .cr-btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.cr-getting-started__status {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 19;
+  margin: 0;
+  max-width: min(22rem, calc(100% - 2rem));
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: #2a3c4c;
+  color: #fff;
+  font-size: 0.78rem;
+}
+
+.cr-editor-topbar__advanced {
+  margin: 0.15rem 0;
+  padding: 0.25rem 0.5rem;
+}
+
+.cr-editor-topbar__advanced summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--cr-muted);
+  padding: 0.25rem 0;
+}
+
+.cr-editor-topbar__advanced button {
+  width: 100%;
+  text-align: left;
+}
+
+.cr-editor-topbar__menu-hint {
+  margin: 0.25rem 0 0.4rem;
+  font-size: 0.72rem;
+  color: var(--cr-muted);
+  line-height: 1.35;
+  padding: 0 0.25rem;
+}
+
+.cr-setup-dialog__why {
+  margin: 0 0 0.65rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.cr-setup-dialog__list-heading {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.92rem;
+}
+
+.cr-review-list__badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(0, 169, 134, 0.15);
+  color: #0a5c4a;
+  vertical-align: middle;
+}
+
+.cr-review-list__badge--optional {
+  background: rgba(42, 60, 76, 0.08);
+  color: var(--cr-navy);
 }
